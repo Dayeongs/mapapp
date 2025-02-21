@@ -14,7 +14,8 @@
 <script src="resources/js/lib/jquery.mCustomScrollbar.min.js" type="text/javascript"></script>
 
 <!-- openlayers cdn import #실습 -->
-
+<script src="https://cdn.jsdelivr.net/npm/ol@v10.4.0/dist/ol.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v10.4.0/ol.css">
 
 <title>OPEN SOURCE GIS SERVICE</title>
 </head>
@@ -204,7 +205,7 @@
 					</li>				
 					<li>
 						<span class="color_legend" style="background: #43cf43"></span>
-						읍면동동
+						읍면동
 						<label class="input_switch fl_r">
 							<input type="checkbox" onchange="fn_addWmsLayer(this.checked, this.id,'vworld')" id="lt_c_ademd">
 							<span class="input_slider round"></span>
@@ -217,7 +218,7 @@
 						<span class="color_legend" style="background: #ffff"></span>
 						부산1호선노선도
 						<label class="input_switch fl_r">
-							<input type="checkbox" onchange="fn_addWmsLayer(this.checked, this.id,'geoserver')" id="lxsp:busan_metro_line1">
+							<input type="checkbox" onchange="fn_addWmsLayer(this.checked, this.id,'geoserver')" id="lxsp:busan_line1">
 							<span class="input_slider round"></span>
 						</label>
 					</li>	
@@ -235,7 +236,7 @@
 	</div>
 </div>
 <div id="measurement" class='measurement' style="display: none;"></div>
-<script src="resources/js/main_op_complete.js"></script>
+<script src="resources/js/main_op_before.js"></script>
 
 <script>
 	(function($){

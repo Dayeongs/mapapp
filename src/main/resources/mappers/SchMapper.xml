@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lx.mapapp.repo.SchMapper">
+	<!-- 부산 관광지 목록 가져오기 -->
+	<select id="getAttData" resultType="HashMap">
+		SELECT * FROM busan_att_euckr bat
+	</select>
+	
+	<!-- 관광지와 가까운 지하철역 3개 가져오기 -->
+	<select id="getNearstMetro" resultType="HashMap" parameterType="Map">
+		SELECT
+			bat.name,
+			bat.lat,
+			bat.lng,
+			bmt.st_nm as mname,
+			bmt.st_y as mlat,
+			bmt.st_x as mlng,
+			round((ST_DistanceSphere(bat.geom, bmt.geom)/1000)::numeric, 2) as DISTANCE
+		FROM
+			busan_att_euckr bat, busan_line1 bmt
+		WHERE 
+			bat.gid = #{attid}::numeric
+		ORDER BY DISTANCE
+		LIMIT 3
+	</select>
+</mapper>

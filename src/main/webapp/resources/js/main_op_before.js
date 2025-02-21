@@ -61,8 +61,20 @@ function fn_initUIEvent(){
 //지도 전역변수
 var OL_MAP = "";
 // ##실습 1. 기본지도 호출 함수 
-function fn_callOLMap(){   
-	
+function fn_callOLMap() {
+	OL_MAP = new ol.Map({
+		target: 'mapcontainer',
+		layers: [
+			new ol.layer.Tile({
+				source: new ol.source.OSM()
+			})
+		],
+		view: new ol.View({
+			projection: 'EPSG:4326',
+			center: [127, 36],
+			zoom: 6
+		})
+	});
 }
 
 //##실습 2. 카메라 이동합수
@@ -76,17 +88,19 @@ function fn_moveCamera(){
 	lat = parseFloat(lat); 
 
 	//3. 오픈레이어스 카메라 이동 합수 구현
-	
+	var ol_camera = OL_MAP.getView();
+	ol_camera.setCenter([lon, lat]);
+	ol_camera.setZoom(15);
 }
 
 //##실습 3. 클릭지점 좌표 이벤트 함수
 function fn_evtRegister(flag){
 	if(flag){
 		//이벤트 등록 체크박스 체크시 이벤트 등록
-		
+		OL_MAP.on('singleclick', fn_clickForCoord);
 	}else{		
 		//이벤트 해제 체크박스 해제시 이벤트 해제
-		
+		OL_MAP.un('singleclick', fn_clickForCoord);
 	}
 }
 
@@ -95,13 +109,13 @@ function fn_clickForCoord(_evt){
  
   // 이벤트 객체에서 좌표 취득
   // 기본설정 좌표계로 반환됨
-  
+  const coordinate = _evt.coordinate;
 
   // 로그 출력 (EPSG:3857 좌표계)
   console.log('클릭한 좌표 (EPSG:4326):', coordinate);
   // 취득한 좌표값 화면에 입력	
- // $('#evntLon').val(coordinate[0]);
- // $('#evntLat').val(coordinate[1]);
+  $('#evntLon').val(coordinate[0]);
+  $('#evntLat').val(coordinate[1]);
   
   //지오코딩 함수 호출
   fn_geocodeVworld();
@@ -115,7 +129,25 @@ function fn_clickForCoord(_evt){
  * */
 //vworld 위치 검색 api
 function fn_geocodeVworld(){
-	
+	$.ajax({
+		url: "https://api.vworld.kr/req/address?",
+		type: "GET",
+		dataType: "jsonp",
+		data: {
+			service: "address",
+			request: "getAddress",
+			version: "2.0",
+			crs: "EPSG:4326",
+			type: "BOTH",
+			format: "json",
+			errorformat: "json",
+			point: $('#evntLon').val() + "," + $('#evntLat').val(),
+			key: GLOBAL.VWORLD_API_KEY
+		},
+		success: function(res) {
+			$('#geocoding_res').text(res.response.result[0].text);
+		}
+	})
 }
 
 //################################################################################ 검색
@@ -144,7 +176,7 @@ const SEARCHPOI_SOURCE = new ol.source.Vector({
 const SEARCHPOI_LAYER = new ol.layer.Vector({
 	name : 'SEARCHPOI_LAYER',
 	source: SEARCHPOI_SOURCE,
-	style:SEARCHPOI_STYLE	
+	style: SEARCHPOI_STYLE	
 });
 
 //map에 레이어 추가 여부 확인 
@@ -157,12 +189,56 @@ function fn_searchDB(){
 
 //검색 요청 콜백
 function fn_searchResHandler(data){
+	if(!SEARCH_POI_INIT) {
+		OL_MAP.addLayer(SEARCHPOI_LAYER);	// 측정 레이어 추가
+		SEARCH_POI_INIT = true;
+	}
 	
+	// 검색 아이콘 소스 클리어
+	SEARCHPOI_SOURCE.clear();
+	
+	resultList = data.res;
+	let result = '';
+	
+	$('#searchres_db').empty();
+	$('#tab3 h2').html("<span>부산관광지</span> 검색결과입니다.");
+	
+	// 응답 객체에 담긴 리스트 크기 만큼 반복 수행
+	resultList.forEach(function(data, idx) {
+		result += '<li class="title actice" data-pointx=' + data.lng + ' data-pointy=' + data.lat + ' onclick="fn_getNearstMetro(\''+ data.gid +'\')"><ul>';
+		result += '<li>' + data.name + '</li>';	// 명칭
+		result += '<li class="addr">' + data.addr1 + '</li>';	// 지번주소
+		result += '<li class="phone">' + data.title + '</li></li></ul>';	// 타이틀
+		
+		$('#searchres_db').html(result);
+		
+		// 아이콘 feature 생성
+		let iconFeature = new ol.Feature({
+			geometry: new ol.geom.Point([data.lng, data.lat]),	// 검색결과의 경위도 컬럼명인 point.x, point.y
+			name: data.name	// 검색결과 명칭 이름
+		});
+		
+		// 벡터소스에 feature add
+		SEARCHPOI_SOURCE.addFeature(iconFeature);
+	})
+	
+	OL_MAP.getView().fit(SEARCHPOI_SOURCE.getExtent(), OL_MAP.getSize());
 }
 
 //가까운 지하철역 검색
 function fn_getNearstMetro(attId){
-	
+	let pJson = JSON.stringify({ "attid": attId });
+	$.ajax({
+		type: 'POST',
+		url: './getNearstMetro',
+		data: pJson,
+		dataType: "json",
+		contentType: "application/json; charset=UTF-8",
+		success: fn_addMetroLoc,
+		error: function (request, status, error) {
+			alert("code:" + request.status + "\n" + "message:" + request.responesText);
+		}
+	})
 }
 
 //지하철역 아이콘
@@ -206,7 +282,32 @@ var METRO_POI_INIT = false;
 
 //지하철역 위치 표현
 function fn_addMetroLoc(data){
+	if(!METRO_POI_INIT) {
+		// map에 레이어 추가
+		OL_MAP.addLayer(METRO_LAYER);
+		OL_MAP.addLayer(M_LIE_LAYER);
+		METRO_POI_INIT = true;		
+	}
 	
+	resultList = data.res;
+	
+	// 소스에 담긴 내용 초기화
+	METRO_SORURCE.clear();
+	M_LINE_SOURCE.clear();
+	
+	resultList.forEach(function (data, idx) {
+		let iconFeature = new ol.Feature({	// 아이콘 feature 생성
+			geometry: new ol.geom.Point([data.mlng, data.mlat]), // 검색결과의 경위도 컬럼명
+			name: data.name	// 검색결과 명칭 이름
+		})
+		
+		const lineFeature = new ol.Feature(new ol.geom.LineString([[data.lng, data.lat], [data.mlng, data.mlat]]));
+		METRO_SORURCE.addFeature(iconFeature);
+		M_LINE_SOURCE.addFeature(lineFeature);
+	});
+	
+	// 화면 영역을 소스의 extent 범위로 이동
+	OL_MAP.getView().fit(METRO_SORURCE.getExtent(), OL_MAP.getSize());
 }
 
 
@@ -220,29 +321,113 @@ function fn_addMetroLoc(data){
  * */
 
 
+
 //vworld 위치 검색 api
-function fn_searchVworld(pageNum){
-	
+function fn_searchVworld(pageNum) {
+
 	var keyword = $('#searchKeyword_vw').val();	//검색할 키워드
-	
-	if(keyword.trim().length == 0){ //검색결과 초기화
+
+	if (keyword.trim().length == 0) { //검색결과 초기화
 		$('#tab2 h2').html("");
 		$('#searchres_vw').html('');
-		$('#searchrpage_vw').html('');			
+		$('#searchrpage_vw').html('');
 		return;
-	}else{
-	
+	} else {
+		if (!SEARCH_POI_INIT) {
+			OL_MAP.addLayer(SEARCHPOI_LAYER); 		//측정 레이어 추가	
+			SEARCH_POI_INIT = true;				//레이어 호출 여부 플레이그
+		}
+		//검색 아이콘 소스 클리어
+		SEARCHPOI_SOURCE.clear();
 	}
 
+	var params = {
+		service: "search"
+		, request: "search"
+		, version: "2.0"
+		, crs: "EPSG:4326"
+		, size: 10
+		, page: pageNum
+		, query: keyword
+		, type: 'PLACE'
+		, format: "json"
+		, errorformat: "json"
+		, key: GLOBAL.VWORLD_API_KEY
+	}
+
+	$.ajax({
+		type: 'GET'
+		, url: "http://api.vworld.kr/req/search"
+		, dataType: 'JSONP'
+		, data: params
+		, success: function(data) {
+			//검색 결과 목록 배치
+			$('#tab4 h2').html("<span>" + keyword + "</span>(총 " + data.response.record.total + "건) 검색결과입니다.");
+			let result = '';
+			//#클릭시 위치 이동 되도록 소스 추가 필요
+			for (let i = 0; i < data.response.record.current; i++) {
+				let thisItem = data.response.result.items[i];
+				result += '<li class="title active" data-pointx=' + thisItem.point.x + ' data-pointy=' + thisItem.point.y + '  onclick="fn_showLocation(this)"><ul>';
+				result += '<li>' + thisItem.title + '</li>';						//명칭
+				result += '<li>' + thisItem.address.parcel + '</li>';				//지번주소
+				result += '<li class="addr">' + thisItem.address.road + "</li>";    //도로명주소
+				result += '<li class="phone">' + thisItem.id + '<span> | ' + thisItem.category + '</span></li></ul></li>';
+				result = fn_keywordHighlight(result, keyword);
+				$('#searchres_vw').html(result);
+				//#검색 결과 point 배치
+				//검색결과의 위치를 아이콘으로 표현하는 소스 추가 필요
+				//아이콘 feature 생성
+				let iconFeature = new ol.Feature({
+					//검색결과의 경위도 컬럼명인 point.x, point.y
+					geometry: new ol.geom.Point([thisItem.point.x, thisItem.point.y]),
+					name: data.name //검색결과 명칭 이름 
+				});
+
+				//벡터소스에 feature add
+				SEARCHPOI_SOURCE.addFeature(iconFeature);
+
+			}
+
+			//검색 결과 페이징 목록 배치
+			let pageData = data.response.page;
+			let pagination = '';
+			let startPage = (parseInt((pageData.current - 1) / 10) * 10) + 1; //시작페이지
+			let endPage = startPage + (pageData.size - 1);				  //끝페이지
+
+			if (pageData.current == '1') {
+				pagination += '<li disabled>◀</li>';
+			} else {
+				pagination += '<li>◀</li>';
+			}
+			let maxPage = pageData.total < endPage ? pageData.total : endPage;
+			for (let i = startPage; i <= maxPage; i++) {
+				if (pageData.current == i) {
+					pagination += "<li id='currnetPage' disabled>" + i + "</li>";
+				} else {
+					pagination += "<li>" + i + "</li>";
+				}
+			}
+			if (pageData.current == pageData.total) {
+				pagination += '<li disabled>▶</li>';
+			} else {
+				pagination += '<li>▶</li>';
+			}
+			$('#searchrpage_vw').html(pagination);
+			OL_MAP.getView().fit(SEARCHPOI_SOURCE.getExtent(), OL_MAP.getSize());
+			OL_MAP.getView().setZoom(OL_MAP.getView().getZoom() - 1);
+		}
+	})
 }
 
-//
 function fn_showLocation(_obj){
 	//Number로 형변환
 	var lon = parseFloat($(_obj).attr("data-pointx")); 
 	var lat = parseFloat($(_obj).attr("data-pointy")); 
-
 	
+	//지정한 좌표를 중심으로 이동
+	var ol_camera = OL_MAP.getView();
+		ol_camera.setCenter([lon, lat]);
+		ol_camera.setZoom(18);
 }
 
 //검색어 하이라이트
@@ -256,16 +441,50 @@ function fn_keywordHighlight(_html, _keyword) {
 }
 
 //################################################################################ 레이어 매시업
-function fn_addWmsLayer(_flag, _layerNm, _type){
-	
+function fn_addWmsLayer(_flag, _layerNm, _type) {
+	var wms_layer = "";
+	if (fn_findLayerByName(_layerNm)) {
+		wms_layer = fn_findLayerByName(_layerNm);
+		wms_layer.setVisible(_flag);
+	} else {
+		if (_flag) {
+			if (_type == 'vworld') {	// VWorld WMS 호출
+				wms_layer = new ol.layer.Tile({
+					name: _layerNm,
+					extent: [124.57849539297766, 32.56623775540233, 129.97428592822916, 39.22393370585444],
+					source: new ol.source.TileWMS({
+						url: GLOBAL.VWORLD_WMS_URL,
+						params: { 'LAYERS': _layerNm, 'TILED': true, 'KEY': GLOBAL.VWORLD_API_KEY, 'DOMAIN': GLOBAL.VWORLD_API_DOMAIN },
+						transition: 0
+					})
+				})
+			} else { 	// GeoServer WMS 호출
+				wms_layer = new ol.layer.Tile({
+					name: _layerNm,
+					extent: [124.57849539297766, 32.56623775540233, 129.97428592822916, 39.22393370585444],
+					source: new ol.source.TileWMS({
+						url: GLOBAL.GEOSERVER_WMS_URL,
+						params: { 'LAYERS': _layerNm, 'TILED': true },
+						transition: 0
+					})
+				})
+			}
+		}
+		
+		OL_MAP.addLayer(wms_layer);
+	}
 }
 
 // 레이어 이름으로 해당 레이어가 있는지 확인하는 함수
 function fn_findLayerByName(layerName) {
-    
+    var layers = OL_MAP.getLayers().getArray();
+    for (var i = 0; i < layers.length; i++) {
+        if (layers[i].get('name') === layerName) {
+            return layers[i];
+        }
+    }
+    return null;
 }
-
-
 
 //################################################################################ 인터렉션
 
